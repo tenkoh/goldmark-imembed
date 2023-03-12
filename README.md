@@ -40,8 +40,8 @@ When your target markdown is not in the current working directory, add `WithPare
 
 ```go
 goldmark.New(
-    goldmark.WithExtensions(Img64),
-    goldmark.WithRendererOptions(WithParentPath(dir)),
+    goldmark.WithExtensions(img64.Img64),
+    goldmark.WithRendererOptions(img64.WithParentPath(dir)),
 )
 ```
 
