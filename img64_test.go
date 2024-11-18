@@ -63,7 +63,8 @@ func TestEncodeImage(t *testing.T) {
 
 	r := &img64Renderer{
 		Img64Config: Img64Config{
-			Config: html.NewConfig(),
+			Config:     html.NewConfig(),
+			FileReader: defaultFileReader,
 		},
 	}
 	for _, tt := range tests {
