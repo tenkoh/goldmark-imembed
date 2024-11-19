@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,12 +16,16 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-const optImg64ParentPath renderer.OptionName = "base64ParentPath"
+const (
+	optImg64ParentPath renderer.OptionName = "base64ParentPath"
+	optImg64FileReader renderer.OptionName = "base64FileReader"
+)
 
 // Img64Config embeds html.Config to refer to some fields like unsafe and xhtml.
 type Img64Config struct {
 	html.Config
 	ParentPath string
+	FileReader FileReader
 }
 
 // SetOption implements renderer.NodeRenderer.SetOption
@@ -32,6 +35,8 @@ func (c *Img64Config) SetOption(name renderer.OptionName, value any) {
 	switch name {
 	case optImg64ParentPath:
 		c.ParentPath = value.(string)
+	case optImg64FileReader:
+		c.FileReader = value.(FileReader)
 	}
 }
 
@@ -45,6 +50,35 @@ func WithParentPath(path string) interface {
 	Img64Option
 } {
 	return &withParentPath{path}
+}
+
+type FileReader func(path string) ([]byte, error)
+
+func defaultFileReader(path string) ([]byte, error) {
+	// do not encode online image
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return nil, nil
+	}
+	return os.ReadFile(filepath.Clean(path))
+}
+
+func WithFileReader(r FileReader) interface {
+	renderer.Option
+	Img64Option
+} {
+	return &withFileReader{r}
+}
+
+type withFileReader struct {
+	reader FileReader
+}
+
+func (o *withFileReader) SetConfig(c *renderer.Config) {
+	c.Options[optImg64FileReader] = o.reader
+}
+
+func (o *withFileReader) SetImg64Option(c *Img64Config) {
+	c.FileReader = o.reader
 }
 
 type withParentPath struct {
@@ -66,7 +100,8 @@ type img64Renderer struct {
 func NewImg64Renderer(opts ...Img64Option) renderer.NodeRenderer {
 	r := &img64Renderer{
 		Img64Config: Img64Config{
-			Config: html.NewConfig(),
+			Config:     html.NewConfig(),
+			FileReader: defaultFileReader,
 		},
 	}
 	for _, o := range opts {
@@ -99,10 +134,6 @@ var commonWebImages = func() map[string]struct{} {
 
 func (r *img64Renderer) encodeImage(src []byte) ([]byte, error) {
 	s := string(src)
-	// do not encode online image
-	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
-		return src, nil
-	}
 	// already encoded
 	if strings.HasPrefix(s, "data:") {
 		return src, nil
@@ -110,14 +141,12 @@ func (r *img64Renderer) encodeImage(src []byte) ([]byte, error) {
 	if !filepath.IsAbs(s) && r.ParentPath != "" {
 		s = filepath.Join(r.ParentPath, s)
 	}
-	f, err := os.Open(filepath.Clean(s))
-	if err != nil {
-		return nil, fmt.Errorf("fail to open %s: %w", s, err)
-	}
-	defer f.Close()
-	b, err := io.ReadAll(f)
+	b, err := r.FileReader(s)
 	if err != nil {
 		return nil, fmt.Errorf("fail to read %s: %w", s, err)
+	}
+	if b == nil {
+		return src, nil // do not encode unsupported images
 	}
 	mtype := mimetype.Detect(b).String()
 	if _, exist := commonWebImages[mtype]; !exist {
