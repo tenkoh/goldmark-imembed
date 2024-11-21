@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -16,16 +14,21 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+var (
+	_ goldmark.Extender     = &img64{}
+	_ renderer.NodeRenderer = &img64Renderer{}
+)
+
 const (
-	optImg64ParentPath renderer.OptionName = "base64ParentPath"
-	optImg64FileReader renderer.OptionName = "base64FileReader"
+	optImg64PathResolver renderer.OptionName = "base64PathResolver"
+	optImg64FileReader   renderer.OptionName = "base64FileReader"
 )
 
 // Img64Config embeds html.Config to refer to some fields like unsafe and xhtml.
 type Img64Config struct {
 	html.Config
-	ParentPath string
-	FileReader FileReader
+	PathResolver PathResolver
+	FileReader   FileReader
 }
 
 // SetOption implements renderer.NodeRenderer.SetOption
@@ -33,8 +36,8 @@ func (c *Img64Config) SetOption(name renderer.OptionName, value any) {
 	c.Config.SetOption(name, value)
 
 	switch name {
-	case optImg64ParentPath:
-		c.ParentPath = value.(string)
+	case optImg64PathResolver:
+		c.PathResolver = value.(PathResolver)
 	case optImg64FileReader:
 		c.FileReader = value.(FileReader)
 	}
@@ -45,63 +48,16 @@ type Img64Option interface {
 	SetImg64Option(*Img64Config)
 }
 
-func WithParentPath(path string) interface {
-	renderer.Option
-	Img64Option
-} {
-	return &withParentPath{path}
-}
-
-type FileReader func(path string) ([]byte, error)
-
-func defaultFileReader(path string) ([]byte, error) {
-	// do not encode online image
-	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		return nil, nil
-	}
-	return os.ReadFile(filepath.Clean(path))
-}
-
-func WithFileReader(r FileReader) interface {
-	renderer.Option
-	Img64Option
-} {
-	return &withFileReader{r}
-}
-
-type withFileReader struct {
-	reader FileReader
-}
-
-func (o *withFileReader) SetConfig(c *renderer.Config) {
-	c.Options[optImg64FileReader] = o.reader
-}
-
-func (o *withFileReader) SetImg64Option(c *Img64Config) {
-	c.FileReader = o.reader
-}
-
-type withParentPath struct {
-	path string
-}
-
-func (o *withParentPath) SetConfig(c *renderer.Config) {
-	c.Options[optImg64ParentPath] = o.path
-}
-
-func (o *withParentPath) SetImg64Option(c *Img64Config) {
-	c.ParentPath = o.path
-}
-
 type img64Renderer struct {
 	Img64Config
 }
 
-func NewImg64Renderer(opts ...Img64Option) renderer.NodeRenderer {
+func NewImg64Renderer(opts ...Img64Option) *img64Renderer {
 	r := &img64Renderer{
 		Img64Config: Img64Config{
-			Config:     html.NewConfig(),
-			FileReader: defaultFileReader,
+			Config:       html.NewConfig(),
+			PathResolver: defaultPathResolver,
+			FileReader:   defaultFileReader,
 		},
 	}
 	for _, o := range opts {
@@ -138,10 +94,10 @@ func (r *img64Renderer) encodeImage(src []byte) ([]byte, error) {
 	if strings.HasPrefix(s, "data:") {
 		return src, nil
 	}
-	if !filepath.IsAbs(s) && r.ParentPath != "" {
-		s = filepath.Join(r.ParentPath, s)
-	}
-	b, err := r.FileReader(s)
+
+	path := r.PathResolver(s)
+
+	b, err := r.FileReader(path)
 	if err != nil {
 		return nil, fmt.Errorf("fail to read %s: %w", s, err)
 	}
@@ -219,8 +175,8 @@ type img64 struct {
 var Img64 = &img64{}
 
 // NewImg64 initializes Img64: goldmark's extension with its options.
-// Using default Img64 with goldmark.WithRendereOptions(opts) give the same result.
-func NewImg64(opts ...Img64Option) goldmark.Extender {
+// Using default Img64 with goldmark.WithRenderOptions(opts) give the same result.
+func NewImg64(opts ...Img64Option) *img64 {
 	return &img64{
 		options: opts,
 	}
