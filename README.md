@@ -38,7 +38,7 @@ By default, only images that satisfy all the following conditions will be embedd
   - An absolute path.
 
 ### Notes
-- Remote image URLs (e.g., `https://example.com/image.png`) are not supported by default. See [Embedding Remote Images](#embedding-remote-imags) for how to handle such cases.
+- Remote image URLs (e.g., `https://example.com/image.png`) are not supported by default. See [Embedding Remote Images](#embedding-remote-images) for how to handle such cases.
 
 ## Usage recipes
 Here are various ways to use `goldmark-img64`:
@@ -74,6 +74,8 @@ When your target markdown is not in the current working directory, try `WithPath
 `PathResolver` is just a function `func(path string) string`. This repository now provides a simple implementation: `ParentLocalPathResolver`, which adds parent directory's path.
 
 ```go
+dir := "/path/to/parent"
+
 goldmark.New(
     goldmark.WithExtensions(img64.Img64),
     goldmark.WithRendererOptions(
