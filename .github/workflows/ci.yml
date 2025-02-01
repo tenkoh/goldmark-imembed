@@ -22,4 +22,4 @@ jobs:
             exit 1
           fi
       - name: Test
-        run: go test
+        run: go test ./...
